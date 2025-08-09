@@ -72,110 +72,114 @@ def download():
 
     # If requesting mp3, convert on the fly
 from flask import Flask, request, jsonify, Response, stream_with_context
-import yt_dlp
-import requests
+import os
+from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi.middleware.cors import CORSMiddleware
+from yt_dlp import YoutubeDL
+from starlette.responses import StreamingResponse
 
-app = Flask(__name__)
+app = FastAPI()
 
-# Common yt-dlp options with headers to mimic a browser
+# Allow CORS for all origins — adjust for production if needed
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# yt-dlp options for extracting info and streaming
 YDL_OPTS_INFO = {
     'quiet': True,
     'skip_download': True,
-    'forcejson': True,
     'no_warnings': True,
-    'http_headers': {
-        'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                       '(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'),
-        'Accept-Language': 'en-US,en;q=0.9',
-    },
+    'format': 'best',
 }
 
-@app.route('/get-info')
-def get_info():
-    url = request.args.get('url')
-    if not url:
-        return jsonify({'error': 'Missing URL parameter'}), 400
-
+@app.get("/get-info")
+async def get_info(url: str = Query(..., description="YouTube video URL")):
+    if not url.startswith("http"):
+        raise HTTPException(status_code=400, detail="Invalid URL format")
     try:
-        with yt_dlp.YoutubeDL(YDL_OPTS_INFO) as ydl:
+        with YoutubeDL(YDL_OPTS_INFO) as ydl:
             info = ydl.extract_info(url, download=False)
-
-        data = {
+        
+        formats = []
+        for f in info.get('formats', []):
+            # Only include formats with video or audio
+            if f.get('vcodec') != 'none' or f.get('acodec') != 'none':
+                formats.append({
+                    'itag': f.get('format_id'),
+                    'container': f.get('ext'),
+                    'qualityLabel': f.get('format_note') or f.get('quality') or 'Unknown',
+                    'hasVideo': f.get('vcodec') != 'none',
+                    'hasAudio': f.get('acodec') != 'none',
+                    'mimeType': f.get('mime_type', ''),
+                    'bitrate': f.get('abr', None),  # audio bitrate kbps
+                })
+        
+        # Return simplified info for frontend
+        return {
             'title': info.get('title'),
             'author': info.get('uploader'),
             'thumbnail': info.get('thumbnail'),
             'lengthSeconds': info.get('duration'),
-            'formats': [
-                {
-                    'itag': f.get('format_id'),
-                    'container': f.get('ext'),
-                    'qualityLabel': f.get('format_note'),
-                    'hasVideo': f.get('vcodec') != 'none',
-                    'hasAudio': f.get('acodec') != 'none',
-                    'mimeType': f.get('acodec') + '/' + f.get('ext'),
-                }
-                for f in info.get('formats', [])
-                if (f.get('acodec') != 'none' or f.get('vcodec') != 'none')
-            ]
+            'formats': formats
         }
-        return jsonify(data)
-
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': 'Unable to fetch video info', 'details': str(e)}), 500
+        raise HTTPException(status_code=500, detail=f"Failed to fetch video info: {str(e)}")
 
 
-@app.route('/download')
-def download():
-    url = request.args.get('url')
-    itag = request.args.get('itag')
-
-    if not url or not itag:
-        return jsonify({'error': 'Missing url or itag parameter'}), 400
-
+@app.get("/download")
+async def download(url: str = Query(...), itag: str = Query(...), type: str = Query(default='mp4')):
+    if not url.startswith("http"):
+        raise HTTPException(status_code=400, detail="Invalid URL format")
     try:
-        # Extract info again to get direct URL for requested format
-        with yt_dlp.YoutubeDL(YDL_OPTS_INFO) as ydl:
+        # Get video info first to find the format URL
+        with YoutubeDL(YDL_OPTS_INFO) as ydl:
             info = ydl.extract_info(url, download=False)
-
-        format_info = None
+        
+        chosen_format = None
         for f in info.get('formats', []):
             if f.get('format_id') == itag:
-                format_info = f
+                chosen_format = f
                 break
-
-        if not format_info:
-            return jsonify({'error': 'Format not found'}), 404
-
-        # Stream the actual video/audio from the direct URL yt-dlp provides
-        download_url = format_info.get('url')
-        if not download_url:
-            return jsonify({'error': 'No download URL found for selected format'}), 500
-
-        filename = f"{info.get('title', 'video').replace('/', '_')}.{format_info.get('ext', 'mp4')}"
+        
+        if not chosen_format:
+            raise HTTPException(status_code=404, detail="Format not found")
+        
+        # Streaming the actual video/audio via HTTP response
+        # yt-dlp can stream with 'url' of the format
+        stream_url = chosen_format.get('url')
+        if not stream_url:
+            raise HTTPException(status_code=404, detail="Stream URL not found")
+        
+        # Sanitize filename
+        title = info.get('title', 'video').replace('/', '_').replace('\\', '_').replace('"', '_')
+        extension = 'mp3' if type == 'mp3' else chosen_format.get('ext', 'mp4')
+        filename = f"{title}.{extension}"
 
         headers = {
-            'User-Agent': YDL_OPTS_INFO['http_headers']['User-Agent'],
-            'Accept-Language': YDL_OPTS_INFO['http_headers']['Accept-Language'],
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": "audio/mpeg" if type == 'mp3' else "video/mp4"
         }
 
-        def generate():
-            with requests.get(download_url, headers=headers, stream=True) as r:
+        # Return a StreamingResponse that proxies the stream URL to client
+        def iterfile():
+            import requests
+            with requests.get(stream_url, stream=True) as r:
                 r.raise_for_status()
                 for chunk in r.iter_content(chunk_size=8192):
                     if chunk:
                         yield chunk
 
-        response = Response(stream_with_context(generate()), mimetype=format_info.get('acodec', 'video/mp4'))
-        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
-        return response
+        return StreamingResponse(iterfile(), headers=headers)
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': 'Download failed', 'details': str(e)}), 500
+        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
 
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("app:app", host="0.0.0.0", port=port, log_level="info")
