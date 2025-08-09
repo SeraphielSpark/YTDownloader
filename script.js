@@ -4,10 +4,25 @@ import ytdl from '@distube/ytdl-core';
 import ffmpegPath from 'ffmpeg-static';
 import ffmpeg from 'fluent-ffmpeg';
 
+// ✅ Disable ytdl-core update check to avoid 403 error
+process.env.YTDL_NO_UPDATE = '1';
+
 const app = express();
 app.use(cors());
 
 ffmpeg.setFfmpegPath(ffmpegPath);
+
+// Helper: handle YouTube "are you human?" error
+function handleYTError(err, res) {
+  if (err && err.message && err.message.includes("Sign in to confirm you’re not a bot")) {
+    return res.status(429).json({
+      error: 'YouTube requires human verification (CAPTCHA).',
+      message: 'Please try again later or use a different video link.'
+    });
+  }
+  console.error(err);
+  res.status(500).json({ error: 'Failed to process request', details: err.message });
+}
 
 // Get video info endpoint
 app.get('/get-info', async (req, res) => {
@@ -37,8 +52,7 @@ app.get('/get-info', async (req, res) => {
       }))
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch video info' });
+    handleYTError(err, res);
   }
 });
 
@@ -52,12 +66,10 @@ app.get('/download', async (req, res) => {
     const format = info.formats.find(f => f.itag.toString() === itag.toString());
     if (!format) return res.status(404).json({ error: 'Format not found' });
 
-    // Sanitize filename
     const title = info.videoDetails.title.replace(/[^\w\s.-]/g, '_');
     const extension = type === 'mp3' ? 'mp3' : format.container || 'mp4';
     const filename = `${title}.${extension}`;
 
-    // Set proper headers
     res.header({
       'Content-Disposition': `attachment; filename="${filename}"`,
       'Content-Type': type === 'mp3' ? 'audio/mpeg' : 'video/mp4'
@@ -65,30 +77,27 @@ app.get('/download', async (req, res) => {
 
     if (type === 'mp3') {
       const audioStream = ytdl(url, { format, quality: 'highestaudio' });
-      
+
       ffmpeg(audioStream)
         .audioBitrate(128)
         .toFormat('mp3')
         .on('error', (err) => {
-          console.error('FFmpeg error:', err);
-          res.status(500).end();
+          handleYTError(err, res);
         })
         .pipe(res);
     } else {
-      // For video downloads
       ytdl(url, { format })
         .on('error', (err) => {
-          console.error('Download error:', err);
-          res.status(500).end();
+          handleYTError(err, res);
         })
         .pipe(res);
     }
   } catch (err) {
-    console.error('Download route error:', err);
-    res.status(500).json({ error: 'Download failed', details: err.message });
+    handleYTError(err, res);
   }
 });
-const PORT = 5000;
+
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
