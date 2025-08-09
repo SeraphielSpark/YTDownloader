@@ -482,185 +482,162 @@ label {
         </div>
     </main>
 
-    <script> 
-        const fetchBtn = document.getElementById('fetchBtn');
-        const urlInput = document.getElementById('videoURL');
-        const previewSection = document.getElementById('preview-section');
-        const thumbnail = document.getElementById('thumbnail');
-        const titleEl = document.getElementById('video-title');
-        const metaEl = document.getElementById('video-meta');
-        const formatSelect = document.getElementById('format-select');
-        const typeSelect = document.getElementById('type-select');
-        const downloadBtn = document.getElementById('downloadBtn');
-        const progressContainer = document.getElementById('progress-container');
-        const progressBar = document.getElementById('progress-bar');
-        const statusEl = document.getElementById('status');
-        const loadingEl = document.getElementById('loading');
+   <script>
+    const API_BASE = window.location.hostname.includes('localhost')
+        ? 'http://localhost:5000'
+        : 'https://ytdownloader-wcxe.onrender.com';
 
-        // Fetch video info
-        fetchBtn.addEventListener('click', fetchVideoInfo);
-        urlInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') fetchVideoInfo();
+    const fetchBtn = document.getElementById('fetchBtn');
+    const urlInput = document.getElementById('videoURL');
+    const previewSection = document.getElementById('preview-section');
+    const thumbnail = document.getElementById('thumbnail');
+    const titleEl = document.getElementById('video-title');
+    const metaEl = document.getElementById('video-meta');
+    const formatSelect = document.getElementById('format-select');
+    const typeSelect = document.getElementById('type-select');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const progressContainer = document.getElementById('progress-container');
+    const progressBar = document.getElementById('progress-bar');
+    const statusEl = document.getElementById('status');
+    const loadingEl = document.getElementById('loading');
+
+    fetchBtn.addEventListener('click', fetchVideoInfo);
+    urlInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') fetchVideoInfo();
+    });
+
+    async function fetchVideoInfo() {
+        const url = urlInput.value.trim();
+        if (!url) return alert('Please enter a YouTube URL');
+
+        try {
+            showLoading();
+            previewSection.style.display = 'none';
+
+            const response = await fetch(`${API_BASE}/get-info?url=${encodeURIComponent(url)}`);
+            if (!response.ok) {
+                const error = await response.json().catch(() => null);
+                throw new Error(error?.error || 'Failed to fetch video info');
+            }
+
+            const data = await response.json();
+            displayVideoInfo(data);
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error: ' + (error.message || 'Failed to fetch video info'));
+        } finally {
+            hideLoading();
+        }
+    }
+
+    function displayVideoInfo(data) {
+        thumbnail.src = data.thumbnail || '';
+        titleEl.textContent = data.title || 'No title available';
+
+        const minutes = Math.floor(data.lengthSeconds / 60);
+        const seconds = data.lengthSeconds % 60;
+        metaEl.textContent = `${data.author || 'Unknown author'} • ${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+        formatSelect.innerHTML = '';
+        data.formats.forEach(format => {
+            const option = document.createElement('option');
+            option.value = format.itag;
+
+            let label = '';
+            if (format.hasVideo && format.hasAudio) {
+                label = `Video+Audio (${format.qualityLabel || 'Unknown'})`;
+            } else if (format.hasVideo) {
+                label = `Video Only (${format.qualityLabel || 'Unknown'})`;
+            } else if (format.hasAudio) {
+                label = `Audio Only (${format.bitrate ? format.bitrate + 'kbps' : 'Unknown'})`;
+            }
+
+            option.textContent = `${label} - ${format.container || 'Unknown'}`;
+            formatSelect.appendChild(option);
         });
 
-        async function fetchVideoInfo() {
-            const url = urlInput.value.trim();
-            if (!url) return alert('Please enter a YouTube URL');
-            
-            try {
-                showLoading();
-                previewSection.style.display = 'none';
-                
-                const response = await fetch(`https://ytdownloader-wcxe.onrender.com/get-info?url=${encodeURIComponent(url)}`);
-                if (!response.ok) {
-                    const error = await response.json().catch(() => null);
-                    
-                    // ADDED: Handle backend CAPTCHA / human verification response
-                    if (error?.message && error.message.includes('human verification')) {
-                        alert('⚠️ YouTube is asking to verify you are human.\nPlease try again later or use a different video link.');
-                        return;
-                    }
+        previewSection.style.display = 'block';
+        progressContainer.style.display = 'none';
+        statusEl.textContent = '';
+        progressBar.style.width = '0%';
+    }
 
-                    throw new Error(error?.error || 'Failed to fetch video info');
-                }
-                
-                const data = await response.json();
-                displayVideoInfo(data);
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Error: ' + (error.message || 'Failed to fetch video info'));
-            } finally {
-                hideLoading();
+    downloadBtn.addEventListener('click', startDownload);
+    function startDownload() {
+        const url = urlInput.value.trim();
+        if (!url) return alert('Please enter a YouTube URL');
+
+        const itag = formatSelect.value;
+        if (!itag) return alert('Please select a format');
+
+        const type = typeSelect.value;
+
+        downloadBtn.disabled = true;
+        progressContainer.style.display = 'block';
+        statusEl.textContent = 'Preparing download...';
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', `${API_BASE}/download?url=${encodeURIComponent(url)}&itag=${encodeURIComponent(itag)}&type=${encodeURIComponent(type)}`, true);
+        xhr.responseType = 'blob';
+
+        xhr.onprogress = (e) => {
+            if (e.lengthComputable) {
+                const percent = Math.round((e.loaded / e.total) * 100);
+                progressBar.style.width = `${percent}%`;
+                statusEl.textContent = `Downloading... ${percent}%`;
+            } else {
+                statusEl.textContent = `Downloaded ${(e.loaded / (1024 * 1024)).toFixed(2)} MB`;
             }
-        }
+        };
 
-        function displayVideoInfo(data) {
-            thumbnail.src = data.thumbnail || '';
-            titleEl.textContent = data.title || 'No title available';
-            
-            const minutes = Math.floor(data.lengthSeconds / 60);
-            const seconds = data.lengthSeconds % 60;
-            metaEl.textContent = `${data.author || 'Unknown author'} • ${minutes}:${seconds.toString().padStart(2, '0')}`;
-            
-            // Populate format select
-            formatSelect.innerHTML = '';
-            data.formats.forEach(format => {
-                const option = document.createElement('option');
-                option.value = format.itag;
-                
-                let label = '';
-                if (format.hasVideo && format.hasAudio) {
-                    label = `Video+Audio (${format.qualityLabel || 'Unknown'})`;
-                } else if (format.hasVideo) {
-                    label = `Video Only (${format.qualityLabel || 'Unknown'})`;
-                } else if (format.hasAudio) {
-                    label = `Audio Only (${format.bitrate ? format.bitrate + 'kbps' : 'Unknown'})`;
+        xhr.onload = function () {
+            if (this.status === 200) {
+                const blob = this.response;
+                const contentDisposition = xhr.getResponseHeader('Content-Disposition');
+                let filename = 'video.mp4';
+
+                if (contentDisposition) {
+                    const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
+                    if (filenameMatch && filenameMatch[1]) {
+                        filename = filenameMatch[1];
+                    }
                 }
-                
-                option.textContent = `${label} - ${format.container || 'Unknown'}`;
-                formatSelect.appendChild(option);
-            });
-            
-            previewSection.style.display = 'block';
-            progressContainer.style.display = 'none';
-            statusEl.textContent = '';
+
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                statusEl.textContent = 'Download complete!';
+            } else {
+                alert(`Download failed: ${xhr.statusText}`);
+                statusEl.textContent = 'Download failed';
+            }
+            downloadBtn.disabled = false;
+        };
+
+        xhr.onerror = function () {
+            alert('Download error occurred');
+            statusEl.textContent = 'Error during download';
+            downloadBtn.disabled = false;
             progressBar.style.width = '0%';
-        }
+        };
 
-        // Download video
-        downloadBtn.addEventListener('click', startDownload);
-        function startDownload() {
-            const url = urlInput.value.trim();
-            if (!url) return alert('Please enter a YouTube URL');
-            
-            const itag = formatSelect.value;
-            if (!itag) return alert('Please select a format');
-            
-            const type = typeSelect.value;
-            
-            downloadBtn.disabled = true;
-            progressContainer.style.display = 'block';
-            statusEl.textContent = 'Preparing download...';
-            
-            const xhr = new XMLHttpRequest();
-            xhr.open('GET', `https://ytdownloader-wcxe.onrender.com/download?url=${encodeURIComponent(url)}&itag=${encodeURIComponent(itag)}&type=${encodeURIComponent(type)}`, true); // CHANGED to match backend URL
-            xhr.responseType = 'blob';
-            
-            xhr.onprogress = (e) => {
-                if (e.lengthComputable) {
-                    const percent = Math.round((e.loaded / e.total) * 100);
-                    progressBar.style.width = `${percent}%`;
-                    statusEl.textContent = `Downloading... ${percent}%`;
-                } else {
-                    statusEl.textContent = `Downloaded ${(e.loaded / (1024 * 1024)).toFixed(2)} MB`;
-                }
-            };
-            
-            xhr.onload = function() {
-                if (this.status === 200) {
-                    const blob = this.response;
-                    const contentDisposition = xhr.getResponseHeader('Content-Disposition');
-                    let filename = 'video.mp4';
-                    
-                    if (contentDisposition) {
-                        const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
-                        if (filenameMatch && filenameMatch[1]) {
-                            filename = filenameMatch[1];
-                        }
-                    }
-                    
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.style.display = 'none';
-                    a.href = url;
-                    a.download = filename;
-                    document.body.appendChild(a);
-                    a.click();
-                    
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                    
-                    statusEl.textContent = 'Download complete!';
-                } else {
-                    // ADDED: Detect if backend says human verification
-                    try {
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                            try {
-                                const json = JSON.parse(reader.result);
-                                if (json.message && json.message.includes('human verification')) {
-                                    alert('⚠️ YouTube is asking to verify you are human.\nPlease try again later or use another link.');
-                                    return;
-                                }
-                            } catch (_) {}
-                            alert(`Download failed: ${xhr.statusText}`);
-                        };
-                        reader.readAsText(this.response);
-                    } catch (_) {
-                        alert(`Download failed: ${xhr.statusText}`);
-                    }
-                    statusEl.textContent = 'Download failed';
-                }
-                downloadBtn.disabled = false;
-            };
-            
-            xhr.onerror = function() {
-                alert('Download error occurred');
-                statusEl.textContent = 'Error during download';
-                downloadBtn.disabled = false;
-                progressBar.style.width = '0%';
-            };
-            
-            xhr.send();
-        }
+        xhr.send();
+    }
 
-        function showLoading() {
-            loadingEl.style.display = 'flex';
-        }
-        
-        function hideLoading() {
-            loadingEl.style.display = 'none';
-        }
+    function showLoading() {
+        loadingEl.style.display = 'flex';
+    }
+
+    function hideLoading() {
+        loadingEl.style.display = 'none';
+    }
 </script>
 
 
