@@ -1,13 +1,14 @@
 services:
   - type: web
-    name: yt-dlp-youtube-downloader
-    env: node
+    name: app1
+    env: python
+    region: oregon  # choose your preferred region
     plan: free
-    buildCommand: |
-      apt-get update && apt-get install -y yt-dlp
-      npm install
-      mkdir -p temp
-    startCommand: node script.js
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app:app --host 0.0.0.0 --port 10000"
     envVars:
       - key: PORT
-        value: 10000  # Or omit this to use Render’s default PORT env variable
+        value: "10000"
+    autoDeploy: true
+    repo: https://github.com/SeraphielSpark/YTDownloader  # your repo here
+    branch: main  # or master or whatever you use
