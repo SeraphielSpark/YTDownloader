@@ -2,5 +2,7 @@ fastapi
 uvicorn
 yt-dlp
 httpx
+requests
+starlette
 
 
