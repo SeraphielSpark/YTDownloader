@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: yt-dlp-youtube-downloader
+    env: node
+    plan: free
+    buildCommand: |
+      apt-get update && apt-get install -y yt-dlp
+      npm install
+      mkdir -p temp
+    startCommand: node script.js
+    envVars:
+      - key: PORT
+        value: 10000  # Or omit this to use Render’s default PORT env variable
