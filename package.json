@@ -7,7 +7,7 @@
     "start": "node script.js"
   },
   "dependencies": {
-    // Add your dependencies here, e.g. "express": "^4.18.2"
+    "express": "^4.18.2"
   },
   "author": "",
   "license": "MIT"
