@@ -1,13 +1,14 @@
-services:
-  - type: web
-    name: yt-dlp-youtube-downloader
-    env: node
-    plan: free
-    buildCommand: |
-      apt-get update && apt-get install -y yt-dlp
-      npm install
-      mkdir -p temp
-    startCommand: node script.js
-    envVars:
-      - key: PORT
-        value: 10000  # Or omit this to use Render’s default PORT env variable
+{
+  "name": "yt-dlp-youtube-downloader",
+  "version": "1.0.0",
+  "description": "A Node.js YouTube downloader using yt-dlp",
+  "main": "script.js",
+  "scripts": {
+    "start": "node script.js"
+  },
+  "dependencies": {
+    // Add your dependencies here, e.g. "express": "^4.18.2"
+  },
+  "author": "",
+  "license": "MIT"
+}
