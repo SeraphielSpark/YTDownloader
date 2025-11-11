@@ -16,8 +16,7 @@ app.add_middleware(
 )
 
 # 🌟 CRITICAL FIX: Define the path to your YouTube cookie file.
-# You MUST create a file named 'youtube_cookies.txt' and populate it with 
-# cookies from a logged-in YouTube account, then upload it to your repo.
+# This is mainly needed for age-gated/bot-challenged YouTube videos.
 COOKIES_FILE = 'youtube_cookies.txt' 
 
 # yt-dlp options to extract video info without downloading
@@ -31,7 +30,7 @@ YDL_OPTS_INFO = {
     },
     # FIX 2: Prioritize non-DASH formats (combined video/audio)
     'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best', 
-    'extractor_args': {'youtube': {'skip_dash_manifest': True, 'player_client': 'web'}},
+    # NOTE: Removed YouTube-specific 'extractor_args' for general multi-site compatibility
     'retries': 3, 
     'socket_timeout': 15,
     # 🌟 CRITICAL FIX 3: Load the cookie file for authentication
@@ -39,7 +38,7 @@ YDL_OPTS_INFO = {
 }
 
 @app.get("/get-info")
-async def get_info(url: str = Query(..., description="YouTube video URL")):
+async def get_info(url: str = Query(..., description="Video URL")):
     if not url.startswith("http"):
         raise HTTPException(status_code=400, detail="Invalid URL format")
     try:
@@ -48,7 +47,7 @@ async def get_info(url: str = Query(..., description="YouTube video URL")):
             info = ydl.extract_info(url, download=False, force_ipv4=True)
             
         if info is None:
-            raise Exception("No video information could be extracted. It might be private, deleted, or age-gated.")
+            raise Exception("No video information could be extracted. It might be private, deleted, or regional restricted.")
 
         formats = []
         for f in info.get('formats', []):
