@@ -1,149 +1,166 @@
-import os
-import requests
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-from yt_dlp import YoutubeDL
-from starlette.responses import StreamingResponse
-# Note: Renamed from app.py to main.py to align with user's open file context.
+import logging
+import os # Kept for potential future use or consistency, though currently unused
+from flask import Flask, request, jsonify, Response
+from flask_cors import CORS
+from yt_dlp import YoutubeDL, DownloadError
 
-app = FastAPI()
+# --- Flask Setup ---
+app = Flask(__name__)
+# Enable CORS for all origins
+CORS(app)
 
-# Allow CORS for all origins (adjust in production)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+app.logger.setLevel(logging.INFO)
 
-# 🌟 CRITICAL: Define the path to your YouTube cookie file.
+# --- Configuration ---
+# Note: In a cloud environment like Render, this file must be included in the build, 
+# but it will be read-only and credentials won't persist across restarts.
 COOKIES_FILE = 'youtube_cookies.txt' 
 
-# yt-dlp options to extract video info without downloading
+# yt-dlp options for extracting video metadata (info)
 YDL_OPTS_INFO = {
     'quiet': True,
     'skip_download': True,
     'no_warnings': True,
-    # FIX 1: Add a standard User-Agent to mimic a browser
+    # CRITICAL: Mimic a browser for reliable access
     'http_headers': {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     },
-    # FIX 2: Prioritize non-DASH formats (combined video/audio)
     'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best', 
     'retries': 3, 
     'socket_timeout': 15,
-    # 🌟 CRITICAL 3: Load the cookie file for authentication
     'cookiefile': COOKIES_FILE,
-    # 🚨 CRITICAL FIX: The previously problematic 'force_ipv4': True is NOT included here.
 }
 
-@app.get("/get-info")
-async def get_info(url: str = Query(..., description="Video URL")):
-    if not url.startswith("http"):
-        raise HTTPException(status_code=400, detail="Invalid URL format")
+# --- Utility Functions ---
+
+def handle_ydl_error(e: Exception) -> str:
+    """Parses yt-dlp errors for a friendly message."""
+    error_msg = str(e).split('\n')[0]
+    app.logger.error(f"yt-dlp Error: {error_msg}")
+    
+    if "Sign in to confirm" in error_msg or "confirm you’re not a bot" in error_msg:
+        return "Video Access Denied: This content requires sign-in or cookies (likely age-gated/private)."
+    if "Unsupported URL" in error_msg:
+        return "Unsupported URL. Please check the link or source."
+    
+    return f"Failed to process video: {error_msg}"
+
+
+# --- API Endpoints ---
+
+@app.route("/favicon.ico")
+def favicon():
+    """Placeholder route to prevent 404 logging for the favicon."""
+    return '', 204
+
+@app.route("/get-info", methods=['GET'])
+def get_video_info():
+    """Fetches comprehensive metadata and format options."""
+    url = request.args.get('url')
+    if not url:
+        return jsonify({"detail": "Missing 'url' parameter."}), 400
+    
     try:
+        # Use YoutubeDL as a context manager to extract metadata
         with YoutubeDL(YDL_OPTS_INFO) as ydl:
-            # FIX APPLIED: The fix is confirmed in YDL_OPTS_INFO and the extract_info call is clean.
             info = ydl.extract_info(url, download=False)
             
         if info is None:
-            raise Exception("No video information could be extracted. It might be private, deleted, or regional restricted.")
+            raise Exception("No video information could be extracted.")
 
-        formats = []
+        simplified_formats = []
         for f in info.get('formats', []):
+            # Only include formats that are streamable and have video/audio content
             if f.get('url') and (f.get('vcodec') != 'none' or f.get('acodec') != 'none'):
-                quality_label = f.get('format_note') or f.get('quality') or f.get('resolution')
-                if quality_label and 'DASH' in quality_label:
-                    quality_label = quality_label.replace('-DASH', '').strip()
-                    
-                formats.append({
-                    'itag': f.get('format_id'),
-                    'container': f.get('ext'),
-                    'qualityLabel': quality_label or 'Unknown',
-                    'hasVideo': f.get('vcodec') != 'none',
-                    'hasAudio': f.get('acodec') != 'none',
-                    'mimeType': f.get('mime_type', ''),
-                    'bitrate': f.get('abr', None),
+                quality_label = f.get('format_note') or (f.get('height') and f"{f['height']}p") or 'N/A'
+                
+                simplified_formats.append({
+                    "itag": f.get('format_id'),
+                    "container": f.get('ext'),
+                    "qualityLabel": quality_label,
+                    "hasVideo": f.get('vcodec') != 'none',
+                    "hasAudio": f.get('acodec') != 'none',
+                    "mimeType": f.get('mime_type', ''),
+                    # Include average bitrate if available
+                    "bitrate": f.get('abr', None) 
                 })
 
-        return {
-            'title': info.get('title'),
-            'author': info.get('uploader'),
-            'thumbnail': info.get('thumbnail') or info.get('thumbnails', [{}])[-1].get('url', ''),
-            'lengthSeconds': info.get('duration'),
-            'formats': formats
+        response_data = {
+            "title": info.get('title'),
+            "author": info.get('uploader'),
+            "thumbnail": info.get('thumbnail') or info.get('thumbnails', [{}])[-1].get('url', ''),
+            "lengthSeconds": info.get('duration'),
+            "formats": simplified_formats
         }
-    except Exception as e:
-        error_msg = str(e).split('\n')[0]
-        # IMPROVED ERROR HANDLING: Specifically look for sign-in/cookie errors
-        if "Sign in to confirm" in error_msg or "confirm you’re not a bot" in error_msg:
-            detail = "Video requires sign-in/cookies (likely age-gated or bot-challenged). Ensure 'youtube_cookies.txt' is valid."
-        else:
-            detail = f"Failed to fetch video info: {error_msg}"
-            
-        raise HTTPException(status_code=500, detail=detail)
-
-
-@app.get("/download")
-async def download(url: str = Query(...), itag: str = Query(...), type: str = Query(default='video')):
-    if not url.startswith("http"):
-        raise HTTPException(status_code=400, detail="Invalid URL format")
         
+        return jsonify(response_data)
+
+    except DownloadError as e:
+        error_message = handle_ydl_error(e)
+        return jsonify({"detail": error_message}), 400
+    except Exception as e:
+        app.logger.error("Error in /get-info:", exc_info=True)
+        return jsonify({"detail": f"An unexpected server error occurred: {type(e).__name__}"}), 500
+
+
+@app.route("/download", methods=['GET'])
+def download_video():
+    """
+    Retrieves the direct stream URL and returns an HTTP 302 Redirect.
+    This bypasses server timeouts for reliable long downloads.
+    """
+    url = request.args.get('url')
+    itag = request.args.get('itag')
+    file_type = request.args.get('type') # Used for filename extension
+
+    if not all([url, itag]):
+        return jsonify({"detail": "Missing required parameters (url, itag)."}), 400
+
     try:
-        # Use YDL_OPTS_INFO (which includes the cookie file) for download request
+        # 1. Get the direct stream URL using yt-dlp
         ydl_opts_download = YDL_OPTS_INFO.copy()
         ydl_opts_download['format'] = itag 
-
+        
         with YoutubeDL(ydl_opts_download) as ydl_specific:
-            # FIX APPLIED: The fix is confirmed in YDL_OPTS_INFO and the extract_info call is clean.
             info = ydl_specific.extract_info(url, download=False)
 
-        if not info:
-            raise Exception("Could not extract video information for the specified format.")
-            
-        chosen_format = info.get('formats', [{}])[0]
-        stream_url = chosen_format.get('url')
-        
-        if not stream_url:
-            raise HTTPException(status_code=404, detail="Stream URL not found for the selected format.")
+        chosen_format = next((f for f in info.get('formats', []) if f.get('format_id') == itag), None)
+        stream_url = chosen_format.get('url') if chosen_format else None
 
-        # Sanitize title for filename
+        if not stream_url:
+            return jsonify({"detail": "Stream URL not found for the selected format."}), 404
+
+        # 2. Sanitize title for filename
         title = info.get('title', 'video')
+        # Simple sanitation: keep alphanumeric, spaces, and specific punctuation
         safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
         
-        # Determine filename and headers
-        extension = chosen_format.get('ext', 'mp4')
-        content_type = chosen_format.get('mime_type') or "video/mp4" 
-
+        # 3. Determine filename and headers
+        extension = chosen_format.get('ext', 'mp4') if file_type != 'mp3' else 'mp3'
         filename = f"{safe_title}.{extension}"
+        
+        # 4. Return the HTTP 302 Redirect response
+        # The browser will handle the download directly from the Location URL.
+        response = Response(
+            status=302, 
+            headers={
+                "Location": stream_url,
+                # Use 'Content-Disposition' to suggest the filename and force a download
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+        # Optional: Add Content-Length if known, though not strictly necessary for 302
+        response.headers["Content-Length"] = str(chosen_format.get('filesize') or chosen_format.get('filesize_approx', ''))
+        
+        return response
 
-        headers = {
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Content-Type": content_type,
-            "Content-Length": str(chosen_format.get('filesize') or chosen_format.get('filesize_approx', ''))
-        }
-
-        # Function to stream the file content
-        def iterfile():
-            CHUNK_SIZE = 16384
-            # Pass the User-Agent header to the stream request
-            req_headers = {'User-Agent': YDL_OPTS_INFO['http_headers']['User-Agent']}
-            
-            with requests.get(stream_url, stream=True, timeout=60, headers=req_headers) as r:
-                r.raise_for_status() 
-                for chunk in r.iter_content(chunk_size=CHUNK_SIZE):
-                    if chunk:
-                        yield chunk
-
-        return StreamingResponse(iterfile(), headers=headers, media_type=content_type)
-
-    except requests.exceptions.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"Failed to stream from source: HTTP Error {e.response.status_code}")
+    except DownloadError as e:
+        error_message = handle_ydl_error(e)
+        return jsonify({"detail": error_message}), 400
     except Exception as e:
-        error_msg = str(e).split('\n')[0]
-        raise HTTPException(status_code=500, detail=f"Download failed: {error_msg}")
+        app.logger.error("Error in /download:", exc_info=True)
+        return jsonify({"detail": f"An unexpected error occurred during streaming: {type(e).__name__}"}), 500
 
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, log_level="info", reload=True)
+# The if __name__ == "__main__": block is removed for production deployment via Gunicorn.
