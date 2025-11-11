@@ -1,6 +1,5 @@
-# requirements.txt
-fastapi
-uvicorn
-python-multipart
+Flask
+Flask-CORS
 yt-dlp
+gunicorn
 requests
