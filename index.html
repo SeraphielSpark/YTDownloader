@@ -482,8 +482,12 @@ label {
         </div>
     </main>
 
-   <script>
-    const API_BASE = 'https://ytdownloader-1-4919.onrender.com';
+/* ... (HTML and CSS remains the same) ... */
+
+<script>
+    // **CRITICAL:** Update this API_BASE to your actual Render deployment URL
+    // e.g., const API_BASE = 'https://your-app-name-abcdef.onrender.com';
+    const API_BASE = 'https://ytdownloader-1-4919.onrender.com'; 
 
     const fetchBtn = document.getElementById('fetchBtn');
     const urlInput = document.getElementById('videoURL');
@@ -498,13 +502,20 @@ label {
     const progressBar = document.getElementById('progress-bar');
     const statusEl = document.getElementById('status');
     const loadingEl = document.getElementById('loading');
+    
+    // Store formats globally so they are available when selecting 'type'
+    let availableFormats = []; 
 
     fetchBtn.addEventListener('click', fetchVideoInfo);
     urlInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') fetchVideoInfo();
     });
+    
+    // Add listener for type selection change
+    typeSelect.addEventListener('change', updateFormatOptions);
 
     async function fetchVideoInfo() {
+        // ... (function body is the same) ...
         const url = urlInput.value.trim();
         if (!url) return alert('Please enter a YouTube URL');
 
@@ -514,11 +525,12 @@ label {
 
             const response = await fetch(`${API_BASE}/get-info?url=${encodeURIComponent(url)}`);
             if (!response.ok) {
-                const error = await response.json().catch(() => null);
-                throw new Error(error?.error || 'Failed to fetch video info');
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.detail || 'Failed to fetch video info');
             }
 
             const data = await response.json();
+            availableFormats = data.formats; // Save formats
             displayVideoInfo(data);
         } catch (error) {
             console.error('Error:', error);
@@ -536,28 +548,62 @@ label {
         const seconds = data.lengthSeconds % 60;
         metaEl.textContent = `${data.author || 'Unknown author'} • ${minutes}:${seconds.toString().padStart(2, '0')}`;
 
+        // Initial format list rendering and update logic
+        updateFormatOptions(); 
+        
+        previewSection.style.display = 'block';
+        progressContainer.style.display = 'none';
+        statusEl.textContent = '';
+        progressBar.style.width = '0%';
+    }
+    
+    // New function to filter formats based on the 'Save As' type
+    function updateFormatOptions() {
+        const selectedType = typeSelect.value;
         formatSelect.innerHTML = '';
-        data.formats.forEach(format => {
+        
+        const filteredFormats = availableFormats.filter(format => {
+            // Filter logic: 
+            // - If 'mp3' (Audio), only show audio-only formats or mixed if no audio-only is available
+            // - If 'video' (Video), show video formats (mixed or video-only)
+            if (selectedType === 'mp3') {
+                return format.hasAudio && !format.hasVideo; // Prioritize Audio Only
+            } else {
+                return format.hasVideo; // Prioritize Video (mixed or video-only)
+            }
+        });
+
+        // Fallback: if no pure audio formats, show all audio formats for MP3 (if combined format is chosen, backend serves the video/audio stream)
+        const finalFormats = filteredFormats.length > 0 ? filteredFormats : availableFormats.filter(f => f.hasAudio); 
+
+        // If after filtering, we still have no formats, alert the user or disable download
+        if (finalFormats.length === 0) {
+             const option = document.createElement('option');
+             option.textContent = 'No suitable formats found';
+             option.value = '';
+             formatSelect.appendChild(option);
+             downloadBtn.disabled = true;
+             return;
+        }
+
+        finalFormats.forEach(format => {
             const option = document.createElement('option');
             option.value = format.itag;
 
             let label = '';
             if (format.hasVideo && format.hasAudio) {
-                label = `Video+Audio (${format.qualityLabel || 'Unknown'})`;
+                label = `Video+Audio (${format.qualityLabel})`;
             } else if (format.hasVideo) {
-                label = `Video Only (${format.qualityLabel || 'Unknown'})`;
+                label = `Video Only (${format.qualityLabel})`;
             } else if (format.hasAudio) {
-                label = `Audio Only (${format.bitrate ? format.bitrate + 'kbps' : 'Unknown'})`;
+                const bitrate = format.bitrate ? `${Math.round(format.bitrate)}kbps` : 'Unknown';
+                label = `Audio Only (${bitrate})`;
             }
 
             option.textContent = `${label} - ${format.container || 'Unknown'}`;
             formatSelect.appendChild(option);
         });
-
-        previewSection.style.display = 'block';
-        progressContainer.style.display = 'none';
-        statusEl.textContent = '';
-        progressBar.style.width = '0%';
+        downloadBtn.disabled = false;
     }
 
     downloadBtn.addEventListener('click', startDownload);
@@ -573,18 +619,24 @@ label {
         downloadBtn.disabled = true;
         progressContainer.style.display = 'block';
         statusEl.textContent = 'Preparing download...';
+        progressBar.style.width = '0%'; // Reset progress bar
 
+        // The download logic using XMLHttpRequest for progress reporting is correct and kept.
         const xhr = new XMLHttpRequest();
         xhr.open('GET', `${API_BASE}/download?url=${encodeURIComponent(url)}&itag=${encodeURIComponent(itag)}&type=${encodeURIComponent(type)}`, true);
         xhr.responseType = 'blob';
 
+        // ... (xhr.onprogress, xhr.onload, xhr.onerror handlers are the same) ...
+        
         xhr.onprogress = (e) => {
             if (e.lengthComputable) {
                 const percent = Math.round((e.loaded / e.total) * 100);
                 progressBar.style.width = `${percent}%`;
                 statusEl.textContent = `Downloading... ${percent}%`;
             } else {
-                statusEl.textContent = `Downloaded ${(e.loaded / (1024 * 1024)).toFixed(2)} MB`;
+                // Approximate progress for streams without Content-Length
+                const megabytes = (e.loaded / (1024 * 1024)).toFixed(2);
+                statusEl.textContent = `Downloading... ${megabytes} MB received`;
             }
         };
 
@@ -597,7 +649,8 @@ label {
                 if (contentDisposition) {
                     const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
                     if (filenameMatch && filenameMatch[1]) {
-                        filename = filenameMatch[1];
+                        // Decode filename if it's URL-encoded
+                        filename = decodeURIComponent(filenameMatch[1].replace(/\+/g, ' '));
                     }
                 }
 
@@ -611,16 +664,30 @@ label {
                 window.URL.revokeObjectURL(url);
                 document.body.removeChild(a);
 
-                statusEl.textContent = 'Download complete!';
+                statusEl.textContent = 'Download complete! File saved.';
             } else {
-                alert(`Download failed: ${xhr.statusText}`);
+                let errorMsg = `Download failed. Status: ${xhr.status} ${xhr.statusText}.`;
+                try {
+                    // Try to read error message from the response (if FastAPI sent a JSON error)
+                    const reader = new FileReader();
+                    reader.onload = function() {
+                        try {
+                            const error = JSON.parse(reader.result);
+                            errorMsg = error.detail || errorMsg;
+                        } catch(e) { /* ignore JSON parse error */ }
+                        alert(errorMsg);
+                    };
+                    reader.readAsText(this.response);
+                } catch(e) {
+                    alert(errorMsg);
+                }
                 statusEl.textContent = 'Download failed';
             }
             downloadBtn.disabled = false;
         };
 
         xhr.onerror = function () {
-            alert('Download error occurred');
+            alert('A network error occurred during download.');
             statusEl.textContent = 'Error during download';
             downloadBtn.disabled = false;
             progressBar.style.width = '0%';
@@ -638,9 +705,9 @@ label {
     }
 </script>
 
-
 </body>
 
 </html>
+
 
 
