@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Prime Video Downloader</title>
+    <title>Multi-Site Video Downloader</title>
     <style>
 :root {
     --primary: #ff0000;
@@ -16,13 +16,14 @@
     --border-radius: 8px;
     --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     --transition: all 0.3s ease;
+    --font-inter: 'Inter', 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
 }
 
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    font-family: 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
+    font-family: var(--font-inter);
 }
 
 body {
@@ -93,6 +94,8 @@ main {
     height: 120px;
     margin-bottom: 1rem;
     object-fit: contain;
+    /* Adding rounded corners to the image */
+    border-radius: var(--border-radius); 
 }
 
 .hero h1 {
@@ -118,6 +121,7 @@ main {
     max-width: 600px;
     width: 100%;
     background: white;
+    box-shadow: var(--box-shadow); /* Added shadow for depth */
 }
 
 .search-box input {
@@ -126,7 +130,7 @@ main {
     border: none;
     outline: none;
     font-size: 1rem;
-    min-width: 0; /* Fix for flexbox overflow */
+    min-width: 0;
 }
 
 .search-box button {
@@ -144,16 +148,17 @@ main {
     background-color: var(--primary-dark);
 }
 
-/* Notification Box Styles (New) */
+/* Notification Box Styles */
 .message-box {
     font-size: 0.95rem;
     font-weight: 600;
     word-break: break-word;
-    margin-top: 1.5rem;
+    margin: 1.5rem auto 0;
     padding: 1rem;
     border-radius: var(--border-radius);
     text-align: center;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    max-width: 600px;
 }
 .message-box.error {
     background-color: #ffeaea; /* Light Red */
@@ -214,13 +219,14 @@ main {
 
 .video-info h3 {
     margin-bottom: 0.5rem;
-    font-size: 1.2rem;
+    font-size: 1.4rem; /* Slightly larger title */
     word-break: break-word;
+    color: var(--secondary);
 }
 
 .video-meta {
     color: var(--gray);
-    font-size: 0.9rem;
+    font-size: 1rem;
 }
 
 /* Options Styles */
@@ -236,20 +242,25 @@ select {
     border: 1px solid var(--light-gray);
     border-radius: var(--border-radius);
     font-size: 1rem;
-    background-color: white;
+    background-color: var(--light);
     width: 100%;
     transition: var(--transition);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
 }
 
 select:focus {
     border-color: var(--primary);
-    outline: none;
+    outline: 2px solid rgba(255, 0, 0, 0.2);
+    background-color: white;
 }
 
 label {
     font-weight: 600;
     margin-bottom: -0.8rem;
     font-size: 0.95rem;
+    color: var(--dark);
+    display: block; /* Ensures label takes full width */
+    text-align: left;
 }
 
 /* Button Styles */
@@ -264,16 +275,18 @@ label {
     cursor: pointer;
     transition: var(--transition);
     width: 100%;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .btn:hover {
     background-color: var(--primary-dark);
     transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
 }
 
 .btn:active {
     transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .btn:disabled {
@@ -287,6 +300,7 @@ label {
 .loading {
     display: none;
     justify-content: center;
+    align-items: center;
     margin: 2rem 0;
 }
 
@@ -355,12 +369,17 @@ label {
     .thumbnail-container {
         gap: 1rem;
         flex-direction: column;
+        align-items: center;
     }
     
     .thumbnail {
         max-width: 100%;
     }
     
+    .video-info {
+        text-align: center;
+    }
+
     .options {
         gap: 1rem;
     }
@@ -371,6 +390,10 @@ label {
     
     .btn {
         padding: 0.8rem;
+    }
+
+    label {
+        text-align: center;
     }
 }
 
@@ -420,12 +443,16 @@ label {
     .message-box {
         margin-top: 1rem;
     }
+
+    .video-info {
+        min-width: unset; /* Override fixed width */
+    }
 }
 </style>
 </head>
 <body>
     <header>
-        <div class="logo">Prime<span>Video</span> Downloader</div>
+        <div class="logo">Stream<span>Downloader</span> Pro</div>
         <nav>
             <ul>
                 <li><a href="#">Home</a></li>
@@ -437,13 +464,14 @@ label {
     
     <main>
         <div class="hero">
-            <img src="https://cdn-icons-png.flaticon.com/512/1384/1384060.png" alt="Video Downloader Logo">
+            <img src="https://placehold.co/120x120/ff0000/ffffff?text=Video" alt="Video Downloader Logo">
             <h1>Download Videos & Music from Hundreds of Sites</h1>
             <p>Fast, free, and easy multi-site stream extractor</p>
         </div>
         
         <div class="search-box">
-            <input type="text" id="videoURL" placeholder="Paste Video URL (YouTube, Vimeo, Dailymotion, etc.)...">
+            <!-- Input placeholder updated to be more generic as the backend supports many sites -->
+            <input type="text" id="videoURL" placeholder="Paste Video URL (YouTube, Vimeo, etc.)...">
             <button id="fetchBtn">Search</button>
         </div>
         
@@ -465,7 +493,7 @@ label {
                 </div>
                 
                 <div class="options">
-                    <label for="format-select">Select Format:</label>
+                    <label for="format-select">Select Format (Quality/Container):</label>
                     <select id="format-select"></select>
                     
                     <label for="type-select">Save As:</label>
@@ -474,8 +502,6 @@ label {
                         <option value="mp3">Audio (MP3)</option>
                     </select>
                     
-                    <!-- Progress container removed as download is simplified -->
-                    
                     <button class="btn" id="downloadBtn" disabled>Download</button>
                 </div>
             </div>
@@ -483,9 +509,10 @@ label {
     </main>
 
 <script>
-    // **CRITICAL:** API Base URL for the FastAPI backend
+    // **CRITICAL:** API Base URL for the FastAPI backend (Must be HTTPS)
     const API_BASE = 'https://ytdownloader-1-4919.onrender.com'; 
 
+    // --- DOM Elements ---
     const fetchBtn = document.getElementById('fetchBtn');
     const urlInput = document.getElementById('videoURL');
     const previewSection = document.getElementById('preview-section');
@@ -498,9 +525,10 @@ label {
     const loadingEl = document.getElementById('loading');
     const notificationBox = document.getElementById('notificationBox');
 
-    // Store formats globally so they are available when selecting 'type'
+    // Global variable to hold all available formats from the API
     let availableFormats = []; 
 
+    // --- Event Listeners ---
     fetchBtn.addEventListener('click', fetchVideoInfo);
     urlInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') fetchVideoInfo();
@@ -511,12 +539,14 @@ label {
 
     // --- Utility Functions ---
 
+    /** Displays a non-blocking notification message. */
     function displayNotification(message, type = 'error') {
         notificationBox.textContent = message;
         notificationBox.className = 'message-box ' + type;
         notificationBox.style.display = 'block';
     }
 
+    /** Shows the loading spinner and disables controls. */
     function showLoading() {
         loadingEl.style.display = 'flex';
         downloadBtn.disabled = true;
@@ -524,19 +554,27 @@ label {
         previewSection.style.display = 'none';
     }
 
+    /** Hides the loading spinner. */
     function hideLoading() {
         loadingEl.style.display = 'none';
     }
     
+    /** Formats duration from seconds into HH:MM:SS or MM:SS */
     function formatDuration(seconds) {
         if (typeof seconds !== 'number' || isNaN(seconds) || seconds < 0) return 'N/A';
-        const date = new Date(null);
-        date.setSeconds(seconds);
-        return date.toISOString().substr(11, 8).replace(/^00:/, '');
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+
+        const parts = [h, m, s].map(v => v.toString().padStart(2, '0'));
+        
+        // Remove hours if zero, unless the duration is > 1 hour
+        return (h > 0 ? parts.join(':') : parts.slice(1).join(':'));
     }
 
     // --- Main Logic Functions ---
 
+    /** Fetches video metadata and formats from the backend API. */
     async function fetchVideoInfo() {
         const url = urlInput.value.trim();
         if (!url) {
@@ -551,43 +589,43 @@ label {
             const data = await response.json();
 
             if (!response.ok) {
-                // Check for server-side error message
                 let errorMessage = data.detail || `HTTP Error ${response.status} occurred on the server.`;
 
-                // CRITICAL ERROR CHECK: Show specific message for auth issues
+                // Custom message for authentication issues
                 if (errorMessage.includes("Video requires sign-in/cookies")) {
-                    errorMessage = "🛑 Video Access Denied: This video requires a logged-in session (e.g., age-gated or bot-challenge). The backend must be configured with a valid 'youtube_cookies.txt' file for this to work.";
+                    errorMessage = "🛑 Video Access Denied: This video requires a logged-in session (e.g., age-gated). The backend cannot access it.";
                 }
                 
                 throw new Error(errorMessage);
             }
 
-            availableFormats = data.formats; // Save formats
+            availableFormats = data.formats; 
             displayVideoInfo(data);
-            displayNotification('Video information successfully loaded.', 'success');
+            displayNotification('Video information successfully loaded. Select your preferred format.', 'success');
             
         } catch (error) {
             console.error('Fetch error:', error);
-            displayNotification('Error: ' + (error.message || 'Failed to fetch video information.'), 'error');
+            displayNotification('Error: ' + (error.message || 'Failed to fetch video information. Ensure the URL is valid.'), 'error');
         } finally {
             hideLoading();
         }
     }
 
+    /** Updates the UI with fetched video metadata. */
     function displayVideoInfo(data) {
+        // Fallback placeholder image on error
         thumbnail.src = data.thumbnail || 'https://placehold.co/320x180/e0e0e0/555?text=No+Thumbnail';
         titleEl.textContent = data.title || 'No title available';
 
         const duration = formatDuration(data.lengthSeconds);
-        metaEl.textContent = `${data.author || 'Unknown author'} • Duration: ${duration}`;
+        metaEl.textContent = `${data.author || 'Unknown author'} • Duration: ${duration} • Site: ${data.extractor || 'Generic'}`;
 
-        // Initial format list rendering and update logic
         updateFormatOptions();
         
         previewSection.style.display = 'block';
     }
     
-    // Filters formats based on the selected 'Save As' type (Video/Audio)
+    /** Filters and populates the format dropdown based on the selected media type (Video/MP3). */
     function updateFormatOptions() {
         const selectedType = typeSelect.value;
         formatSelect.innerHTML = '';
@@ -595,15 +633,30 @@ label {
         let filteredFormats = [];
 
         if (selectedType === 'mp3') {
-            // Prioritize Audio Only formats
-            filteredFormats = availableFormats.filter(format => format.hasAudio && !format.hasVideo);
-            // Fallback: If no pure audio, allow combined formats that have audio
-            if (filteredFormats.length === 0) {
+            // Filter 1: Prefer pure audio formats
+            let audioOnlyFormats = availableFormats.filter(format => format.hasAudio && !format.hasVideo);
+
+            // Filter 2: Fallback to combined video+audio formats if no pure audio found
+            if (audioOnlyFormats.length === 0) {
+                 // Sort combined formats by highest audio quality/bitrate if needed, but for simplicity, take any combined.
                 filteredFormats = availableFormats.filter(format => format.hasAudio && format.hasVideo);
+                // Inform user we're extracting audio from a video stream
+                if(filteredFormats.length > 0) {
+                    displayNotification('Note: No pure audio format found. Selecting a video format and extracting audio (MP3).', 'info');
+                }
+            } else {
+                filteredFormats = audioOnlyFormats;
             }
+
         } else { // 'video'
-            // Show all formats that have video (combined or video-only)
+            // Show formats with video track
             filteredFormats = availableFormats.filter(format => format.hasVideo);
+            // Sort by quality (descending)
+            filteredFormats.sort((a, b) => {
+                const qualityA = parseInt(a.qualityLabel || '0');
+                const qualityB = parseInt(b.qualityLabel || '0');
+                return qualityB - qualityA;
+            });
         }
 
         if (filteredFormats.length === 0) {
@@ -621,21 +674,28 @@ label {
 
             let label = '';
             if (format.hasVideo && format.hasAudio) {
-                label = `Video+Audio (${format.qualityLabel})`;
+                label = `Video+Audio (${format.qualityLabel || 'Combined'})`;
             } else if (format.hasVideo) {
-                label = `Video Only (${format.qualityLabel})`;
+                label = `Video Only (${format.qualityLabel || 'Stream'})`;
             } else if (format.hasAudio) {
-                const bitrate = format.bitrate ? `${Math.round(format.bitrate)}kbps` : 'Unknown';
+                const bitrate = format.bitrate ? `${Math.round(format.bitrate / 1000)}kbps` : 'Unknown';
                 label = `Audio Only (${bitrate})`;
             }
 
-            option.textContent = `${label} - ${format.container || 'Unknown'}`;
+            option.textContent = `${label} [.${format.container || 'Unknown'}]`;
             formatSelect.appendChild(option);
         });
-        downloadBtn.disabled = false;
+        
+        // Select the first format by default
+        if (formatSelect.options.length > 0) {
+            formatSelect.selectedIndex = 0;
+            downloadBtn.disabled = false;
+        } else {
+            downloadBtn.disabled = true;
+        }
     }
 
-    // Handles download initiation using window.location.href
+    /** Initiates the download by redirecting the browser to the API's /download endpoint. */
     function startDownload() {
         const url = urlInput.value.trim();
         const itag = formatSelect.value;
@@ -646,19 +706,20 @@ label {
         }
 
         downloadBtn.disabled = true;
-        displayNotification('Preparing download... Your file should start downloading in your browser momentarily.', 'info');
+        displayNotification('Preparing download... Your file should start downloading in your browser momentarily. Do not close this page.', 'info');
         
+        // Construct the final download URL
         const downloadUrl = `${API_BASE}/download?url=${encodeURIComponent(url)}&itag=${encodeURIComponent(itag)}&type=${encodeURIComponent(type)}`;
 
         // Initiate download directly via browser redirect
         window.location.href = downloadUrl;
         
-        // Re-enable button and clear status after a short delay
+        // Re-enable button and show success status after a short delay
         setTimeout(() => {
             downloadBtn.disabled = false;
-            displayNotification('Download initiated. Check your browser downloads for the file.', 'success');
-            setTimeout(() => notificationBox.style.display = 'none', 5000); // Clear success message
-        }, 2000); 
+            displayNotification('Download initiated. If the download does not start, try selecting a different format.', 'success');
+            setTimeout(() => notificationBox.style.display = 'none', 5000); // Clear success message after 5 seconds
+        }, 3000); 
     }
 </script>
 
