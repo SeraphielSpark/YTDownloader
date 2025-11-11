@@ -1,8 +1,6 @@
+# requirements.txt
 fastapi
 uvicorn
+python-multipart
 yt-dlp
-httpx
 requests
-starlette
-
-
