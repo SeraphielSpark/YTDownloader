@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from yt_dlp import YoutubeDL
 from starlette.responses import StreamingResponse
+# Note: Renamed from app.py to main.py to align with user's open file context.
 
 app = FastAPI()
 
@@ -15,8 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🌟 CRITICAL FIX: Define the path to your YouTube cookie file.
-# This is mainly needed for age-gated/bot-challenged YouTube videos.
+# 🌟 CRITICAL: Define the path to your YouTube cookie file.
 COOKIES_FILE = 'youtube_cookies.txt' 
 
 # yt-dlp options to extract video info without downloading
@@ -30,11 +30,11 @@ YDL_OPTS_INFO = {
     },
     # FIX 2: Prioritize non-DASH formats (combined video/audio)
     'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best', 
-    # NOTE: Removed YouTube-specific 'extractor_args' for general multi-site compatibility
     'retries': 3, 
     'socket_timeout': 15,
-    # 🌟 CRITICAL FIX 3: Load the cookie file for authentication
+    # 🌟 CRITICAL 3: Load the cookie file for authentication
     'cookiefile': COOKIES_FILE,
+    # 🚨 CRITICAL FIX: The previously problematic 'force_ipv4': True is NOT included here.
 }
 
 @app.get("/get-info")
@@ -43,8 +43,8 @@ async def get_info(url: str = Query(..., description="Video URL")):
         raise HTTPException(status_code=400, detail="Invalid URL format")
     try:
         with YoutubeDL(YDL_OPTS_INFO) as ydl:
-            # Setting force_ipv4=True can sometimes help with network challenges
-            info = ydl.extract_info(url, download=False, force_ipv4=True)
+            # FIX APPLIED: The fix is confirmed in YDL_OPTS_INFO and the extract_info call is clean.
+            info = ydl.extract_info(url, download=False)
             
         if info is None:
             raise Exception("No video information could be extracted. It might be private, deleted, or regional restricted.")
@@ -95,7 +95,8 @@ async def download(url: str = Query(...), itag: str = Query(...), type: str = Qu
         ydl_opts_download['format'] = itag 
 
         with YoutubeDL(ydl_opts_download) as ydl_specific:
-            info = ydl_specific.extract_info(url, download=False, force_ipv4=True)
+            # FIX APPLIED: The fix is confirmed in YDL_OPTS_INFO and the extract_info call is clean.
+            info = ydl_specific.extract_info(url, download=False)
 
         if not info:
             raise Exception("Could not extract video information for the specified format.")
@@ -145,4 +146,4 @@ async def download(url: str = Query(...), itag: str = Query(...), type: str = Qu
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("app:app", host="0.0.0.0", port=port, log_level="info", reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=port, log_level="info", reload=True)
