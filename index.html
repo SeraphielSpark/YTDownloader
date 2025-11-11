@@ -470,7 +470,6 @@ label {
         </div>
         
         <div class="search-box">
-            <!-- Input placeholder updated to be more generic as the backend supports many sites -->
             <input type="text" id="videoURL" placeholder="Paste Video URL (YouTube, Vimeo, etc.)...">
             <button id="fetchBtn">Search</button>
         </div>
@@ -509,8 +508,9 @@ label {
     </main>
 
 <script>
-    // **CRITICAL:** API Base URL for the FastAPI backend (Must be HTTPS)
-    const API_BASE = 'https://ytdownloader-1-4919.onrender.com'; 
+    // **CRITICAL:** API Base URL for the Flask backend
+    const API_BASE ='http://127.0.0.1:8000'; 
+    const CACHE_KEY = 'lastVideoInfo';
 
     // --- DOM Elements ---
     const fetchBtn = document.getElementById('fetchBtn');
@@ -529,13 +529,20 @@ label {
     let availableFormats = []; 
 
     // --- Event Listeners ---
-    fetchBtn.addEventListener('click', fetchVideoInfo);
+    // 🌟 FIX: Prevent default action on Enter keypress to stop page refresh
     urlInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') fetchVideoInfo();
+        if (e.key === 'Enter') {
+            e.preventDefault(); // <-- The critical line to stop the refresh
+            fetchVideoInfo();
+        }
     });
-    
+
+    fetchBtn.addEventListener('click', fetchVideoInfo);
     typeSelect.addEventListener('change', updateFormatOptions);
     downloadBtn.addEventListener('click', startDownload);
+
+    // Initial load check
+    window.onload = loadFromLocalStorage;
 
     // --- Utility Functions ---
 
@@ -572,6 +579,52 @@ label {
         return (h > 0 ? parts.join(':') : parts.slice(1).join(':'));
     }
 
+    // --- LocalStorage Caching Functions ---
+    
+    /** Saves the fetched video data to local storage. */
+    function saveToLocalStorage(data) {
+        try {
+            const cacheData = {
+                url: urlInput.value.trim(),
+                formats: data.formats,
+                metadata: {
+                    title: data.title,
+                    author: data.author,
+                    thumbnail: data.thumbnail,
+                    lengthSeconds: data.lengthSeconds,
+                    extractor: data.extractor
+                }
+            };
+            localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+        } catch (e) {
+            console.warn("Could not save to localStorage.", e);
+        }
+    }
+    
+    /** Loads video data from local storage on page load. */
+    function loadFromLocalStorage() {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+            try {
+                const cacheData = JSON.parse(cached);
+                
+                // Set the URL input
+                urlInput.value = cacheData.url || '';
+
+                // Restore global formats array and display UI
+                if (cacheData.formats && cacheData.metadata) {
+                    availableFormats = cacheData.formats;
+                    displayVideoInfo(cacheData.metadata, false); // Don't save again
+                    displayNotification('Video info restored from cache.', 'info');
+                }
+            } catch (e) {
+                console.error("Failed to parse local storage data.", e);
+                localStorage.removeItem(CACHE_KEY);
+            }
+        }
+    }
+
+
     // --- Main Logic Functions ---
 
     /** Fetches video metadata and formats from the backend API. */
@@ -591,8 +644,7 @@ label {
             if (!response.ok) {
                 let errorMessage = data.detail || `HTTP Error ${response.status} occurred on the server.`;
 
-                // Custom message for authentication issues
-                if (errorMessage.includes("Video requires sign-in/cookies")) {
+                if (errorMessage.includes("Video Access Denied")) {
                     errorMessage = "🛑 Video Access Denied: This video requires a logged-in session (e.g., age-gated). The backend cannot access it.";
                 }
                 
@@ -600,19 +652,23 @@ label {
             }
 
             availableFormats = data.formats; 
-            displayVideoInfo(data);
+            displayVideoInfo(data, true); // Pass true to save to cache
             displayNotification('Video information successfully loaded. Select your preferred format.', 'success');
             
         } catch (error) {
             console.error('Fetch error:', error);
-            displayNotification('Error: ' + (error.message || 'Failed to fetch video information. Ensure the URL is valid.'), 'error');
+            // Clear cache on fetch failure
+            localStorage.removeItem(CACHE_KEY);
+            // Ensure the preview section is hidden on error
+            previewSection.style.display = 'none';
+            displayNotification('Error: ' + (error.message || 'Failed to fetch video information. Ensure the URL is valid and the Flask server is running.'), 'error');
         } finally {
             hideLoading();
         }
     }
 
     /** Updates the UI with fetched video metadata. */
-    function displayVideoInfo(data) {
+    function displayVideoInfo(data, shouldSave) {
         // Fallback placeholder image on error
         thumbnail.src = data.thumbnail || 'https://placehold.co/320x180/e0e0e0/555?text=No+Thumbnail';
         titleEl.textContent = data.title || 'No title available';
@@ -620,8 +676,11 @@ label {
         const duration = formatDuration(data.lengthSeconds);
         metaEl.textContent = `${data.author || 'Unknown author'} • Duration: ${duration} • Site: ${data.extractor || 'Generic'}`;
 
-        updateFormatOptions();
+        if (shouldSave) {
+            saveToLocalStorage(data);
+        }
         
+        updateFormatOptions();
         previewSection.style.display = 'block';
     }
     
@@ -638,14 +697,17 @@ label {
 
             // Filter 2: Fallback to combined video+audio formats if no pure audio found
             if (audioOnlyFormats.length === 0) {
-                 // Sort combined formats by highest audio quality/bitrate if needed, but for simplicity, take any combined.
-                filteredFormats = availableFormats.filter(format => format.hasAudio && format.hasVideo);
-                // Inform user we're extracting audio from a video stream
+                 // Sort combined formats by highest audio quality/bitrate
+                filteredFormats = availableFormats
+                    .filter(format => format.hasAudio && format.hasVideo)
+                    .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+
                 if(filteredFormats.length > 0) {
                     displayNotification('Note: No pure audio format found. Selecting a video format and extracting audio (MP3).', 'info');
                 }
             } else {
-                filteredFormats = audioOnlyFormats;
+                // Use pure audio, sorted by highest bitrate
+                filteredFormats = audioOnlyFormats.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
             }
 
         } else { // 'video'
