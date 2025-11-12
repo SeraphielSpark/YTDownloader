@@ -1,5 +1,5 @@
 import logging
-import os # Kept for potential future use or consistency, though currently unused
+import os 
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from yt_dlp import YoutubeDL, DownloadError
@@ -14,23 +14,24 @@ logging.basicConfig(level=logging.INFO)
 app.logger.setLevel(logging.INFO)
 
 # --- Configuration ---
-# Note: In a cloud environment like Render, this file must be included in the build, 
-# but it will be read-only and credentials won't persist across restarts.
-COOKIES_FILE = 'youtube_cookies.txt' 
+# Removed COOKIES_FILE reference as the file does not exist on Render's ephemeral disk.
 
 # yt-dlp options for extracting video metadata (info)
 YDL_OPTS_INFO = {
     'quiet': True,
     'skip_download': True,
     'no_warnings': True,
-    # CRITICAL: Mimic a browser for reliable access
+    # CRITICAL: Strengthened headers to bypass YouTube detection on cloud IPs
     'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        # Updated User-Agent (less likely to be flagged as bot)
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        # Essential Referer header
+        'referer': 'https://www.youtube.com/', 
     },
     'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best', 
     'retries': 3, 
     'socket_timeout': 15,
-    'cookiefile': COOKIES_FILE,
+    # 'cookiefile': COOKIES_FILE, <-- REMOVED
 }
 
 # --- Utility Functions ---
@@ -83,7 +84,6 @@ def get_video_info():
                     "hasVideo": f.get('vcodec') != 'none',
                     "hasAudio": f.get('acodec') != 'none',
                     "mimeType": f.get('mime_type', ''),
-                    # Include average bitrate if available
                     "bitrate": f.get('abr', None) 
                 })
 
@@ -134,7 +134,6 @@ def download_video():
 
         # 2. Sanitize title for filename
         title = info.get('title', 'video')
-        # Simple sanitation: keep alphanumeric, spaces, and specific punctuation
         safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
         
         # 3. Determine filename and headers
@@ -142,16 +141,13 @@ def download_video():
         filename = f"{safe_title}.{extension}"
         
         # 4. Return the HTTP 302 Redirect response
-        # The browser will handle the download directly from the Location URL.
         response = Response(
             status=302, 
             headers={
                 "Location": stream_url,
-                # Use 'Content-Disposition' to suggest the filename and force a download
                 "Content-Disposition": f'attachment; filename="{filename}"'
             }
         )
-        # Optional: Add Content-Length if known, though not strictly necessary for 302
         response.headers["Content-Length"] = str(chosen_format.get('filesize') or chosen_format.get('filesize_approx', ''))
         
         return response
