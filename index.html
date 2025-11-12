@@ -508,283 +508,204 @@ label {
     </main>
 
 <script>
-    // **CRITICAL:** API Base URL for the Flask backend
-    const API_BASE = 'https://ytdownloader-1-4919.onrender.com'//'http://127.0.0.1:8000'; 
-    const CACHE_KEY = 'lastVideoInfo';
+// --- Config ---
+const API_BASE = 'https://ytdownloader-1-4919.onrender.com';
+const CACHE_KEY = 'lastVideoInfo';
 
-    // --- DOM Elements ---
-    const fetchBtn = document.getElementById('fetchBtn');
-    const urlInput = document.getElementById('videoURL');
-    const previewSection = document.getElementById('preview-section');
-    const thumbnail = document.getElementById('thumbnail');
-    const titleEl = document.getElementById('video-title');
-    const metaEl = document.getElementById('video-meta');
-    const formatSelect = document.getElementById('format-select');
-    const typeSelect = document.getElementById('type-select');
-    const downloadBtn = document.getElementById('downloadBtn');
-    const loadingEl = document.getElementById('loading');
-    const notificationBox = document.getElementById('notificationBox');
+// --- DOM Elements ---
+const fetchBtn = document.getElementById('fetchBtn');
+const urlInput = document.getElementById('videoURL');
+const previewSection = document.getElementById('preview-section');
+const thumbnail = document.getElementById('thumbnail');
+const titleEl = document.getElementById('video-title');
+const metaEl = document.getElementById('video-meta');
+const formatSelect = document.getElementById('format-select');
+const typeSelect = document.getElementById('type-select');
+const downloadBtn = document.getElementById('downloadBtn');
+const loadingEl = document.getElementById('loading');
+const notificationBox = document.getElementById('notificationBox');
 
-    // Global variable to hold all available formats from the API
-    let availableFormats = []; 
+let availableFormats = [];
 
-    // --- Event Listeners ---
-    // 🌟 FIX: Prevent default action on Enter keypress to stop page refresh
-    urlInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault(); // <-- The critical line to stop the refresh
-            fetchVideoInfo();
+// --- Event Listeners ---
+urlInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        fetchVideoInfo();
+    }
+});
+fetchBtn.addEventListener('click', fetchVideoInfo);
+typeSelect.addEventListener('change', updateFormatOptions);
+downloadBtn.addEventListener('click', startDownload);
+window.onload = loadFromLocalStorage;
+
+// --- Utility Functions ---
+function displayNotification(message, type='error') {
+    notificationBox.textContent = message;
+    notificationBox.className = 'message-box ' + type;
+    notificationBox.style.display = 'block';
+}
+
+function showLoading() {
+    loadingEl.style.display = 'flex';
+    downloadBtn.disabled = true;
+    notificationBox.style.display = 'none';
+    previewSection.style.display = 'none';
+}
+
+function hideLoading() {
+    loadingEl.style.display = 'none';
+}
+
+function formatDuration(seconds) {
+    if (!seconds || isNaN(seconds) || seconds < 0) return 'N/A';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    const parts = [h, m, s].map(v => v.toString().padStart(2,'0'));
+    return h > 0 ? parts.join(':') : parts.slice(1).join(':');
+}
+
+// --- LocalStorage ---
+function saveToLocalStorage(data) {
+    try {
+        const cacheData = {
+            url: urlInput.value.trim(),
+            formats: data.formats,
+            metadata: {
+                title: data.title,
+                author: data.author,
+                thumbnail: data.thumbnail,
+                lengthSeconds: data.lengthSeconds,
+                extractor: data.extractor
+            }
+        };
+        localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+    } catch(e) { console.warn("Could not save to localStorage", e); }
+}
+
+function loadFromLocalStorage() {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+        try {
+            const cacheData = JSON.parse(cached);
+            urlInput.value = cacheData.url || '';
+            if (cacheData.formats && cacheData.metadata) {
+                availableFormats = cacheData.formats;
+                displayVideoInfo(cacheData.metadata, false);
+                displayNotification('Video info restored from cache.', 'info');
+            }
+        } catch(e) {
+            console.error("Failed to parse cache", e);
+            localStorage.removeItem(CACHE_KEY);
         }
+    }
+}
+
+// --- Main Functions ---
+async function fetchVideoInfo() {
+    const url = urlInput.value.trim();
+    if (!url) { displayNotification('Enter a valid URL.','error'); return; }
+
+    try {
+        showLoading();
+        const res = await fetch(`${API_BASE}/get-info?url=${encodeURIComponent(url)}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+            let msg = data.detail || `HTTP Error ${res.status}`;
+            if (msg.includes("Video Access Denied")) {
+                msg = "🛑 Video Access Denied: This video requires login/age verification.";
+            }
+            throw new Error(msg);
+        }
+
+        availableFormats = data.formats;
+        displayVideoInfo(data, true);
+        displayNotification('Video info loaded successfully.','success');
+
+    } catch(err) {
+        console.error('Fetch error:', err);
+        localStorage.removeItem(CACHE_KEY);
+        previewSection.style.display = 'none';
+        displayNotification('Error: ' + (err.message || 'Failed to fetch video info'), 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function displayVideoInfo(data, shouldSave) {
+    thumbnail.src = data.thumbnail || 'https://placehold.co/320x180/e0e0e0/555?text=No+Thumbnail';
+    titleEl.textContent = data.title || 'No title available';
+    const duration = formatDuration(data.lengthSeconds);
+    metaEl.textContent = `${data.author || 'Unknown'} • Duration: ${duration} • Site: ${data.extractor || 'Generic'}`;
+
+    if (shouldSave) saveToLocalStorage(data);
+
+    updateFormatOptions();
+    previewSection.style.display = 'block';
+}
+
+function updateFormatOptions() {
+    const type = typeSelect.value;
+    formatSelect.innerHTML = '';
+    let filtered = [];
+
+    if (type === 'mp3') {
+        let audioOnly = availableFormats.filter(f => f.hasAudio && !f.hasVideo);
+        filtered = audioOnly.length > 0 ? audioOnly.sort((a,b)=>(b.bitrate||0)-(a.bitrate||0))
+                 : availableFormats.filter(f=>f.hasAudio && f.hasVideo).sort((a,b)=>(b.bitrate||0)-(a.bitrate||0));
+        if(audioOnly.length===0 && filtered.length>0) displayNotification('No pure audio found. Using video+audio format for MP3 extraction.','info');
+    } else {
+        filtered = availableFormats.filter(f=>f.hasVideo).sort((a,b)=>parseInt(b.qualityLabel||0)-parseInt(a.qualityLabel||0));
+    }
+
+    if (filtered.length === 0) {
+        const opt = document.createElement('option');
+        opt.textContent = `No suitable ${type} formats found`;
+        opt.value = '';
+        formatSelect.appendChild(opt);
+        downloadBtn.disabled = true;
+        return;
+    }
+
+    filtered.forEach(f=>{
+        const opt = document.createElement('option');
+        opt.value = f.itag;
+        let label = '';
+        if(f.hasVideo && f.hasAudio) label = `Video+Audio (${f.qualityLabel||'Combined'})`;
+        else if(f.hasVideo) label = `Video Only (${f.qualityLabel||'Stream'})`;
+        else if(f.hasAudio) label = `Audio Only (${f.bitrate?Math.round(f.bitrate/1000)+'kbps':'Unknown'})`;
+        opt.textContent = `${label} [.${f.container||'Unknown'}]`;
+        formatSelect.appendChild(opt);
     });
 
-    fetchBtn.addEventListener('click', fetchVideoInfo);
-    typeSelect.addEventListener('change', updateFormatOptions);
-    downloadBtn.addEventListener('click', startDownload);
+    formatSelect.selectedIndex = 0;
+    downloadBtn.disabled = false;
+}
 
-    // Initial load check
-    window.onload = loadFromLocalStorage;
+function startDownload() {
+    const url = urlInput.value.trim();
+    const itag = formatSelect.value;
+    const type = typeSelect.value;
 
-    // --- Utility Functions ---
+    if (!url || !itag) return displayNotification('Select a video and format first.','error');
 
-    /** Displays a non-blocking notification message. */
-    function displayNotification(message, type = 'error') {
-        notificationBox.textContent = message;
-        notificationBox.className = 'message-box ' + type;
-        notificationBox.style.display = 'block';
-    }
+    downloadBtn.disabled = true;
+    displayNotification('Preparing download...', 'info');
 
-    /** Shows the loading spinner and disables controls. */
-    function showLoading() {
-        loadingEl.style.display = 'flex';
-        downloadBtn.disabled = true;
-        notificationBox.style.display = 'none';
-        previewSection.style.display = 'none';
-    }
+    const downloadUrl = `${API_BASE}/download?url=${encodeURIComponent(url)}&itag=${encodeURIComponent(itag)}&type=${encodeURIComponent(type)}`;
+    window.location.href = downloadUrl;
 
-    /** Hides the loading spinner. */
-    function hideLoading() {
-        loadingEl.style.display = 'none';
-    }
-    
-    /** Formats duration from seconds into HH:MM:SS or MM:SS */
-    function formatDuration(seconds) {
-        if (typeof seconds !== 'number' || isNaN(seconds) || seconds < 0) return 'N/A';
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        const s = Math.floor(seconds % 60);
-
-        const parts = [h, m, s].map(v => v.toString().padStart(2, '0'));
-        
-        // Remove hours if zero, unless the duration is > 1 hour
-        return (h > 0 ? parts.join(':') : parts.slice(1).join(':'));
-    }
-
-    // --- LocalStorage Caching Functions ---
-    
-    /** Saves the fetched video data to local storage. */
-    function saveToLocalStorage(data) {
-        try {
-            const cacheData = {
-                url: urlInput.value.trim(),
-                formats: data.formats,
-                metadata: {
-                    title: data.title,
-                    author: data.author,
-                    thumbnail: data.thumbnail,
-                    lengthSeconds: data.lengthSeconds,
-                    extractor: data.extractor
-                }
-            };
-            localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
-        } catch (e) {
-            console.warn("Could not save to localStorage.", e);
-        }
-    }
-    
-    /** Loads video data from local storage on page load. */
-    function loadFromLocalStorage() {
-        const cached = localStorage.getItem(CACHE_KEY);
-        if (cached) {
-            try {
-                const cacheData = JSON.parse(cached);
-                
-                // Set the URL input
-                urlInput.value = cacheData.url || '';
-
-                // Restore global formats array and display UI
-                if (cacheData.formats && cacheData.metadata) {
-                    availableFormats = cacheData.formats;
-                    displayVideoInfo(cacheData.metadata, false); // Don't save again
-                    displayNotification('Video info restored from cache.', 'info');
-                }
-            } catch (e) {
-                console.error("Failed to parse local storage data.", e);
-                localStorage.removeItem(CACHE_KEY);
-            }
-        }
-    }
-
-
-    // --- Main Logic Functions ---
-
-    /** Fetches video metadata and formats from the backend API. */
-    async function fetchVideoInfo() {
-        const url = urlInput.value.trim();
-        if (!url) {
-            displayNotification('Please enter a valid video URL.', 'error');
-            return;
-        }
-
-        try {
-            showLoading();
-
-            const response = await fetch(`${API_BASE}/get-info?url=${encodeURIComponent(url)}`);
-            const data = await response.json();
-
-            if (!response.ok) {
-                let errorMessage = data.detail || `HTTP Error ${response.status} occurred on the server.`;
-
-                if (errorMessage.includes("Video Access Denied")) {
-                    errorMessage = "🛑 Video Access Denied: This video requires a logged-in session (e.g., age-gated). The backend cannot access it.";
-                }
-                
-                throw new Error(errorMessage);
-            }
-
-            availableFormats = data.formats; 
-            displayVideoInfo(data, true); // Pass true to save to cache
-            displayNotification('Video information successfully loaded. Select your preferred format.', 'success');
-            
-        } catch (error) {
-            console.error('Fetch error:', error);
-            // Clear cache on fetch failure
-            localStorage.removeItem(CACHE_KEY);
-            // Ensure the preview section is hidden on error
-            previewSection.style.display = 'none';
-            displayNotification('Error: ' + (error.message || 'Failed to fetch video information. Ensure the URL is valid and the Flask server is running.'), 'error');
-        } finally {
-            hideLoading();
-        }
-    }
-
-    /** Updates the UI with fetched video metadata. */
-    function displayVideoInfo(data, shouldSave) {
-        // Fallback placeholder image on error
-        thumbnail.src = data.thumbnail || 'https://placehold.co/320x180/e0e0e0/555?text=No+Thumbnail';
-        titleEl.textContent = data.title || 'No title available';
-
-        const duration = formatDuration(data.lengthSeconds);
-        metaEl.textContent = `${data.author || 'Unknown author'} • Duration: ${duration} • Site: ${data.extractor || 'Generic'}`;
-
-        if (shouldSave) {
-            saveToLocalStorage(data);
-        }
-        
-        updateFormatOptions();
-        previewSection.style.display = 'block';
-    }
-    
-    /** Filters and populates the format dropdown based on the selected media type (Video/MP3). */
-    function updateFormatOptions() {
-        const selectedType = typeSelect.value;
-        formatSelect.innerHTML = '';
-        
-        let filteredFormats = [];
-
-        if (selectedType === 'mp3') {
-            // Filter 1: Prefer pure audio formats
-            let audioOnlyFormats = availableFormats.filter(format => format.hasAudio && !format.hasVideo);
-
-            // Filter 2: Fallback to combined video+audio formats if no pure audio found
-            if (audioOnlyFormats.length === 0) {
-                 // Sort combined formats by highest audio quality/bitrate
-                filteredFormats = availableFormats
-                    .filter(format => format.hasAudio && format.hasVideo)
-                    .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
-
-                if(filteredFormats.length > 0) {
-                    displayNotification('Note: No pure audio format found. Selecting a video format and extracting audio (MP3).', 'info');
-                }
-            } else {
-                // Use pure audio, sorted by highest bitrate
-                filteredFormats = audioOnlyFormats.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
-            }
-
-        } else { // 'video'
-            // Show formats with video track
-            filteredFormats = availableFormats.filter(format => format.hasVideo);
-            // Sort by quality (descending)
-            filteredFormats.sort((a, b) => {
-                const qualityA = parseInt(a.qualityLabel || '0');
-                const qualityB = parseInt(b.qualityLabel || '0');
-                return qualityB - qualityA;
-            });
-        }
-
-        if (filteredFormats.length === 0) {
-            const option = document.createElement('option');
-            option.textContent = `No suitable ${selectedType} formats found`;
-            option.value = '';
-            formatSelect.appendChild(option);
-            downloadBtn.disabled = true;
-            return;
-        }
-
-        filteredFormats.forEach(format => {
-            const option = document.createElement('option');
-            option.value = format.itag;
-
-            let label = '';
-            if (format.hasVideo && format.hasAudio) {
-                label = `Video+Audio (${format.qualityLabel || 'Combined'})`;
-            } else if (format.hasVideo) {
-                label = `Video Only (${format.qualityLabel || 'Stream'})`;
-            } else if (format.hasAudio) {
-                const bitrate = format.bitrate ? `${Math.round(format.bitrate / 1000)}kbps` : 'Unknown';
-                label = `Audio Only (${bitrate})`;
-            }
-
-            option.textContent = `${label} [.${format.container || 'Unknown'}]`;
-            formatSelect.appendChild(option);
-        });
-        
-        // Select the first format by default
-        if (formatSelect.options.length > 0) {
-            formatSelect.selectedIndex = 0;
-            downloadBtn.disabled = false;
-        } else {
-            downloadBtn.disabled = true;
-        }
-    }
-
-    /** Initiates the download by redirecting the browser to the API's /download endpoint. */
-    function startDownload() {
-        const url = urlInput.value.trim();
-        const itag = formatSelect.value;
-        const type = typeSelect.value;
-
-        if (!url || !itag) {
-            return displayNotification('Please search for a video and select a format first.', 'error');
-        }
-
-        downloadBtn.disabled = true;
-        displayNotification('Preparing download... Your file should start downloading in your browser momentarily. Do not close this page.', 'info');
-        
-        // Construct the final download URL
-        const downloadUrl = `${API_BASE}/download?url=${encodeURIComponent(url)}&itag=${encodeURIComponent(itag)}&type=${encodeURIComponent(type)}`;
-
-        // Initiate download directly via browser redirect
-        window.location.href = downloadUrl;
-        
-        // Re-enable button and show success status after a short delay
-        setTimeout(() => {
-            downloadBtn.disabled = false;
-            displayNotification('Download initiated. If the download does not start, try selecting a different format.', 'success');
-            setTimeout(() => notificationBox.style.display = 'none', 5000); // Clear success message after 5 seconds
-        }, 3000); 
-    }
+    setTimeout(()=>{
+        downloadBtn.disabled = false;
+        displayNotification('Download started. If it fails, try another format.','success');
+        setTimeout(()=>notificationBox.style.display='none',5000);
+    },3000);
+}
 </script>
 
 </body>
 </html>
+
 
