@@ -537,7 +537,7 @@ urlInput.addEventListener('keypress', (e) => {
 fetchBtn.addEventListener('click', fetchVideoInfo);
 typeSelect.addEventListener('change', updateFormatOptions);
 downloadBtn.addEventListener('click', startDownload);
-window.onload = loadFromLocalStorage;
+window.addEventListener('load', loadFromLocalStorage);
 
 // --- Utility Functions ---
 function displayNotification(message, type='error') {
@@ -614,13 +614,13 @@ async function fetchVideoInfo() {
 
         if (!res.ok) {
             let msg = data.detail || `HTTP Error ${res.status}`;
-            if (msg.includes("Video Access Denied")) {
-                msg = "🛑 Video Access Denied: This video requires login/age verification.";
+            if (msg.includes("restricted") || msg.includes("private")) {
+                msg = "🛑 Video is restricted or private and cannot be accessed.";
             }
             throw new Error(msg);
         }
 
-        availableFormats = data.formats;
+        availableFormats = data.formats || [];
         displayVideoInfo(data, true);
         displayNotification('Video info loaded successfully.','success');
 
@@ -652,7 +652,7 @@ function updateFormatOptions() {
     let filtered = [];
 
     if (type === 'mp3') {
-        let audioOnly = availableFormats.filter(f => f.hasAudio && !f.hasVideo);
+        const audioOnly = availableFormats.filter(f => f.hasAudio && !f.hasVideo);
         filtered = audioOnly.length > 0 ? audioOnly.sort((a,b)=>(b.bitrate||0)-(a.bitrate||0))
                  : availableFormats.filter(f=>f.hasAudio && f.hasVideo).sort((a,b)=>(b.bitrate||0)-(a.bitrate||0));
         if(audioOnly.length===0 && filtered.length>0) displayNotification('No pure audio found. Using video+audio format for MP3 extraction.','info');
@@ -707,5 +707,6 @@ function startDownload() {
 
 </body>
 </html>
+
 
 
